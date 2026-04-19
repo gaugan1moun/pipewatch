@@ -51,3 +51,15 @@ def test_check_silenced(tmp_path):
     runner.invoke(silence, ["add", "row_count", "--path", path])
     result = runner.invoke(silence, ["check", "row_count", "--path", path])
     assert "currently silenced" in result.output
+
+
+def test_add_multiple_silences_list_shows_all(tmp_path):
+    """Adding multiple silences should show all entries in list output."""
+    runner = CliRunner()
+    path = _path(tmp_path)
+    runner.invoke(silence, ["add", "row_count", "--reason", "maintenance", "--path", path])
+    runner.invoke(silence, ["add", "latency", "--reason", "deploy", "--path", path])
+    result = runner.invoke(silence, ["list", "--path", path])
+    assert result.exit_code == 0
+    assert "row_count" in result.output
+    assert "latency" in result.output
