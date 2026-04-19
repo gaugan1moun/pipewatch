@@ -1,55 +1,63 @@
-"""CLI entry point for pipewatch."""
-
-import json
-import sys
-from pathlib import Path
+"""CLI entry points for pipewatch."""
 
 import click
 
+from pipewatch.config import load_thresholds, default_config_template
+from pipewatch.alert_config import load_dispatcher, default_alert_config_template
 from pipewatch.collector import MetricCollector
-from pipewatch.config import default_config_template, load_thresholds
-from pipewatch.metrics import MetricStatus
+from pipewatch.formatters import format_table, format_json, format_summary
+from pipewatch.history import record_metrics, DEFAULT_HISTORY_PATH
+from pipewatch.report import build_report, format_report
 
 
 @click.group()
 def cli():
-    """pipewatch — monitor and alert on data pipeline health metrics."""
+    """Pipewatch — monitor and alert on data pipeline health."""
 
 
-@cli.command("check")
-@click.option("--config", default="pipewatch.json", show_default=True, help="Path to config file.")
-@click.option("--format", "output_format", default="text", type=click.Choice(["text", "json"]), show_default=True)
-def check(config, output_format):
-    """Run metric checks and report status."""
-    thresholds = load_thresholds(Path(config))
-    collector = MetricCollector()
-
-    for name, threshold in thresholds.items():
-        collector.register(name, lambda: 0.0, threshold)
-
+@cli.command()
+@click.option("--config", default="pipewatch.yaml", show_default=True)
+@click.option("--alerts", default="pipewatch_alerts.yaml", show_default=True)
+@click.option("--format", "fmt", default="table", type=click.Choice(["table", "json", "summary"]))
+@click.option("--save-history", is_flag=True, default=False, help="Persist metrics to history file.")
+def check(config, alerts, fmt, save_history):
+    """Collect metrics and evaluate thresholds."""
+    thresholds = load_thresholds(config)
+    collector = MetricCollector(thresholds)
     metrics = collector.collect()
-    has_critical = any(m.status == MetricStatus.CRITICAL for m in metrics)
 
-    if output_format == "json":
-        click.echo(json.dumps([m.to_dict() for m in metrics], indent=2))
+    if fmt == "table":
+        click.echo(format_table(metrics))
+    elif fmt == "json":
+        click.echo(format_json(metrics))
     else:
-        for m in metrics:
-            symbol = {"ok": "✓", "warning": "!", "critical": "✗", "unknown": "?"}.get(m.status.value, "?")
-            click.echo(f"[{symbol}] {m.name}: {m.value} {m.unit} ({m.status.value})")
+        click.echo(format_summary(metrics))
 
-    sys.exit(2 if has_critical else 0)
+    if save_history:
+        record_metrics(metrics)
+        click.echo(f"History saved to {DEFAULT_HISTORY_PATH}")
+
+    dispatcher = load_dispatcher(alerts)
+    dispatcher.dispatch(metrics)
 
 
-@cli.command("init")
+@cli.command()
+@click.option("--config", default="pipewatch.yaml", show_default=True)
+@click.option("--window", default=5, show_default=True, help="Number of past runs for trend.")
+def report(config, window):
+    """Show metric history and trends."""
+    thresholds = load_thresholds(config)
+    collector = MetricCollector(thresholds)
+    metrics = collector.collect()
+    reports = build_report(metrics, trend_window=window)
+    click.echo(format_report(reports))
+
+
+@cli.command()
 def init():
-    """Generate a default pipewatch.json configuration file."""
-    config_path = Path("pipewatch.json")
-    if config_path.exists():
-        click.echo("pipewatch.json already exists. Aborting.")
-        sys.exit(1)
-    config_path.write_text(json.dumps(default_config_template(), indent=2))
-    click.echo("Created pipewatch.json with default thresholds.")
-
-
-if __name__ == "__main__":
-    cli()
+    """Write default config files."""
+    with open("pipewatch.yaml", "w") as f:
+        f.write(default_config_template())
+    with open("pipewatch_alerts.yaml", "w") as f:
+        f.write(default_alert_config_template())
+    click.echo("Created pipewatch.yaml and pipewatch_alerts.yaml")
