@@ -17,7 +17,10 @@ def retention():
 def prune(path, max_age_days, max_entries):
     """Prune old history entries according to retention policy."""
     policy = RetentionPolicy(max_age_days=max_age_days, max_entries_per_metric=max_entries)
-    removed = prune_history(path, policy)
+    try:
+        removed = prune_history(path, policy)
+    except FileNotFoundError:
+        raise click.ClickException(f"History file not found: {path}")
     click.echo(f"Pruned {removed} entries from {path}.")
 
 
@@ -28,7 +31,10 @@ def prune(path, max_age_days, max_entries):
 def status(path, max_age_days, max_entries):
     """Show retention status for the history file."""
     policy = RetentionPolicy(max_age_days=max_age_days, max_entries_per_metric=max_entries)
-    summary = retention_summary(path, policy)
+    try:
+        summary = retention_summary(path, policy)
+    except FileNotFoundError:
+        raise click.ClickException(f"History file not found: {path}")
     click.echo(f"Total entries     : {summary['total_entries']}")
     click.echo(f"Expired entries   : {summary['expired_entries']}")
     click.echo(f"Max age (days)    : {summary['max_age_days']}")
