@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 import click
 
@@ -20,17 +21,26 @@ def scorer() -> None:
 @click.option("--config", "cfg_path", default="pipewatch.yml", show_default=True,
               help="Path to threshold config file.")
 @click.option("--weights", "weights_json", default=None,
-              help='JSON object of metric weights, e.g. \'{"latency": 2.0}\'.')
+              help='JSON object of metric weights, e.g. \'{"latency": 2.0}\'')
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
               show_default=True)
+@click.option("--fail-on-critical", is_flag=True, default=False,
+              help="Exit with a non-zero status code when any metric is CRITICAL.")
 def show(
     cfg_path: str,
     weights_json: str | None,
     fmt: str,
+    fail_on_critical: bool,
 ) -> None:
     """Display a weighted health score for all registered metrics."""
     thresholds = load_thresholds(cfg_path)
-    weights: dict[str, float] = json.loads(weights_json) if weights_json else {}
+
+    try:
+        weights: dict[str, float] = json.loads(weights_json) if weights_json else {}
+    except json.JSONDecodeError as exc:
+        raise click.BadParameter(
+            f"Invalid JSON for --weights: {exc}", param_hint="'--weights'"
+        ) from exc
 
     collector = MetricCollector()
     # Collect raw values and evaluate against thresholds
@@ -53,3 +63,6 @@ def show(
             click.echo(
                 f"  {sm.name:<30} {sm.status.value:<10} {sm.score * 100:>5.0f}%"
             )
+
+    if fail_on_critical and hs.num_critical > 0:
+        sys.exit(1)
