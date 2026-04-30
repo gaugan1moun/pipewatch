@@ -66,5 +66,11 @@ def test_trend_insufficient_data(tmp_history):
     assert trend("x", path=tmp_history) is None
 
 
+def test_trend_unknown_metric(tmp_history):
+    """trend() should return None when the metric has no recorded history."""
+    record_metrics([_metric("a", 1.0)], path=tmp_history)
+    assert trend("nonexistent", path=tmp_history) is None
+
+
 def test_load_missing_file(tmp_history):
     assert load_history(tmp_history) == []
